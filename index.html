@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src file: 'self' data:; style-src 'self' 'unsafe-inline'">
+  <title>SlideImageViewer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 图片胶片条：所有图片横向平铺在这里 -->
+  <div id="strip"><div id="track"></div></div>
+
+  <!-- 空状态提示 -->
+  <div id="empty">
+    <div class="empty-icon">🖼️</div>
+    <div class="empty-text">右键打开图片或文件夹，也可以直接拖进来</div>
+  </div>
+
+  <!-- 调速时短暂出现的速度浮标 -->
+  <div id="speed-hint"></div>
+
+  <!-- 底部半透明状态栏（鼠标移到窗口底部时出现） -->
+  <div id="statusbar">
+    <div id="sb-name" class="sb-text">-</div>
+    <div id="sb-track">
+      <div id="sb-progress"></div>
+      <div id="sb-thumb"></div>
+    </div>
+    <div id="sb-index" class="sb-text">0 / 0</div>
+    <div id="sb-speed" class="sb-text">1.0x</div>
+  </div>
+
+  <!-- 右键菜单 -->
+  <div id="ctxmenu">
+    <div class="mi" data-act="open-file">打开图片…</div>
+    <div class="mi" data-act="open-dir">打开文件夹…</div>
+    <div class="sep"></div>
+    <div class="mi" data-act="prev">上一张<span class="kbd">←</span></div>
+    <div class="mi" data-act="next">下一张<span class="kbd">→</span></div>
+    <div class="mi" data-act="toggle">播放<span class="kbd">空格</span></div>
+    <div class="mi" data-act="faster">加速<span class="kbd">滚轮↓</span></div>
+    <div class="mi" data-act="slower">减速<span class="kbd">滚轮↑</span></div>
+    <div class="sep"></div>
+    <div class="mi" data-act="stack">水平图上下堆叠<span class="chk" id="chk-stack">✓</span></div>
+    <div class="mi" data-act="reveal">在资源管理器中显示</div>
+    <div class="mi" data-act="fullscreen">全屏幕<span class="kbd">F11</span></div>
+    <div class="sep"></div>
+    <div class="mi" data-act="exit">退出</div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

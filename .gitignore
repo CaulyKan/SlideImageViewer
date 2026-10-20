@@ -1,0 +1,17 @@
+# 依赖与编译产物
+node_modules/
+dist/
+
+# 测试素材：由 npm run gen-images / gen-anim 生成，不入库
+test/images/
+test/anim/
+
+# 测试截图产物
+test/shot-*.png
+
+# 编辑器与系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.log

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<!-- 生成真正的动画 WebP：用 canvas 让 Chromium 编码出静止 WebP 帧，再手工拼成动画容器 -->
+<script>
+const fs = require('fs');
+const { ipcRenderer } = require('electron');
+const { readSize } = require('../imagesize');
+
+const put24 = (b, at, v) => { b[at] = v & 0xff; b[at + 1] = (v >> 8) & 0xff; b[at + 2] = (v >> 16) & 0xff; };
+const chunk = (fourcc, data) => {
+  const size = Buffer.alloc(4);
+  size.writeUInt32LE(data.length);
+  const body = Buffer.concat([Buffer.from(fourcc, 'latin1'), size, data]);
+  return data.length % 2 ? Buffer.concat([body, Buffer.from([0])]) : body; // 块按偶数长度对齐
+};
+const riff = (chunks) => {
+  const body = Buffer.concat([Buffer.from('WEBP', 'latin1'), ...chunks]);
+  const head = Buffer.alloc(4);
+  head.writeUInt32LE(body.length);
+  return Buffer.concat([Buffer.from('RIFF', 'latin1'), head, body]);
+};
+
+// 把静止 WebP 拆成 RIFF 数据块，取出可直接放进 ANMF 的图像数据。
+// ANMF 帧里只允许出现 ALPH 和 VP8/VP8L，ICC/EXIF/XMP 必须剔除，否则整帧被判定为非法。
+const FRAME_OK = new Set(['ALPH', 'VP8 ', 'VP8L']);
+function framePayload(buf, diag) {
+  const chunks = [];
+  let pos = 12;
+  while (pos + 8 <= buf.length) {
+    const fourcc = buf.toString('latin1', pos, pos + 4);
+    const size = buf.readUInt32LE(pos + 4);
+    const total = 8 + size + (size % 2); // 块按偶数长度对齐
+    if (pos + total > buf.length) break;
+    chunks.push({ fourcc, start: pos, total });
+    pos += total;
+  }
+  if (diag) diag.push(chunks.map((c) => c.fourcc).join(' '));
+  const inner = chunks.filter((c) => FRAME_OK.has(c.fourcc));
+  if (!inner.length) return null;
+  return Buffer.concat(inner.map((c) => buf.subarray(c.start, c.start + c.total)));
+}
+
+// 取 canvas 编码出的静止 WebP 里的图像数据块
+const diag = [];
+function stillChunk(w, h, hue) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = 'hsl(' + hue + ',70%,45%)';
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = 'hsl(' + ((hue + 180) % 360) + ',80%,60%)';
+  for (let i = 0; i < 40; i++) {
+    g.beginPath();
+    g.arc((i * 137) % w, (i * 89) % h, 12 + (i % 30), 0, 7);
+    g.fill();
+  }
+  const buf = Buffer.from(c.toDataURL('image/webp', 0.8).split(',')[1], 'base64');
+  const payload = framePayload(buf, diag);
+  if (!payload || payload.length < 100) {
+    throw new Error('canvas 编码的 WebP 结构异常，只取到 ' + (payload ? payload.length : 0) + ' 字节');
+  }
+  return payload;
+}
+
+function animWebp(w, h, hues, durationMs) {
+  const vp8x = Buffer.alloc(10);
+  vp8x[0] = 0x02;              // 置位"含动画"标志
+  put24(vp8x, 4, w - 1);
+  put24(vp8x, 7, h - 1);
+  const anim = Buffer.alloc(6); // 背景色 BGRA + 循环次数（0 = 无限）
+  const chunks = [chunk('VP8X', vp8x), chunk('ANIM', anim)];
+  for (const hue of hues) {
+    const hdr = Buffer.alloc(16);
+    put24(hdr, 0, 0);          // 帧左上角 x
+    put24(hdr, 3, 0);          // 帧左上角 y
+    put24(hdr, 6, w - 1);      // 帧宽
+    put24(hdr, 9, h - 1);      // 帧高
+    put24(hdr, 12, durationMs);
+    hdr[15] = 0;               // 不混合、不处置
+    chunks.push(chunk('ANMF', Buffer.concat([hdr, stillChunk(w, h, hue)])));
+  }
+  return riff(chunks);
+}
+
+// 用 canvas 画两次，像素不同就说明真的在动。
+// 注意：必须把图片挂进文档，Chromium 才会为它启动动画计时器（脱离文档的图片不会动）
+async function isAnimating(url) {
+  const im = new Image();
+  im.width = 32; im.height = 32;
+  im.style.cssText = 'position:fixed;left:0;top:0;width:32px;height:32px';
+  const loaded = new Promise((res, rej) => { im.onload = res; im.onerror = rej; });
+  im.src = url;
+  document.body.appendChild(im);
+  await loaded;
+  const shot = () => {
+    const c = document.createElement('canvas');
+    c.width = 32; c.height = 32;
+    const g = c.getContext('2d');
+    g.drawImage(im, 0, 0, 32, 32);
+    return g.getImageData(0, 0, 32, 32).data.join(',');
+  };
+  // 多采几帧再比对：只等固定时长容易正好采到同一帧，导致误判为"不动"
+  const seen = new Set();
+  for (let i = 0; i < 6; i++) {
+    seen.add(shot());
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  im.remove();
+  return { im, changed: seen.size > 1 };
+}
+
+(async () => {
+  try {
+    const { outDir } = await ipcRenderer.invoke('get-cfg');
+    fs.mkdirSync(outDir, { recursive: true });
+    const COUNT = 40, W = 800, H = 600;
+    for (let i = 0; i < COUNT; i++) {
+      const hue = Math.round((i * 360) / COUNT);
+      const buf = animWebp(W, H, [hue, (hue + 60) % 360], 120);
+      fs.writeFileSync(outDir + '\\anim_' + String(i).padStart(2, '0') + '.webp', buf);
+    }
+    // 自检：第一张能否解码、尺寸是否读对、是否真的在动
+    const first = outDir + '\\anim_00.webp';
+    const size = readSize(first);
+    // 顺便确认渲染环境是活的（rAF 有没有在跑）
+    let ticks = 0;
+    const ticker = () => { ticks++; requestAnimationFrame(ticker); };
+    requestAnimationFrame(ticker);
+    const { im, changed } = await isAnimating(require('url').pathToFileURL(first).href);
+    // 对照组：已知能动的 GIF，用来验证"检测动图"的方法本身是否可靠
+    const gifPath = outDir.replace(/[\\/]anim$/, '') + '\\images\\b_01_anim.gif';
+    const gif = fs.existsSync(gifPath) ? await isAnimating(require('url').pathToFileURL(gifPath).href) : null;
+    console.log('[GEN]' + JSON.stringify({
+      count: COUNT,
+      stillChunks: diag[0],
+      bytes: fs.statSync(first).size,
+      decoded: [im.naturalWidth, im.naturalHeight],
+      readSize: size,
+      animating: changed,
+      gifAnimating: gif ? gif.changed : null,
+      hidden: document.hidden,
+      rafTicks: ticks,
+    }));
+  } catch (err) {
+    console.log('[GEN]' + JSON.stringify({ error: String(err && err.message || err) }));
+  }
+})();
+</script>

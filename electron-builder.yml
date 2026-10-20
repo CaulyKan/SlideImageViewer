@@ -1,0 +1,43 @@
+# electron-builder 打包配置
+appId: com.cauly.slideimageviewer
+productName: SlideImageViewer
+copyright: SlideImageViewer
+
+directories:
+  output: dist
+  buildResources: build
+
+# 只打包运行必需的文件，测试脚本和素材不进包
+files:
+  - main.js
+  - renderer.js
+  - imagesize.js
+  - index.html
+  - style.css
+  - package.json
+
+# 用最大压缩，体积更小
+compression: maximum
+
+win:
+  icon: build/icon.ico
+  # 这里只出"解压即用"的 zip；安装版的名字由下面的 nsis 段单独指定。
+  # 故意不做 portable 单文件 exe：它每次启动都要先解压到临时目录，打开很慢，
+  # 对看图软件来说是致命伤。
+  artifactName: SlideImageViewer-${version}-win-${arch}.${ext}
+  target:
+    - target: nsis        # 安装版
+      arch:
+        - x64
+    - target: zip         # 解压即用版（就是未压缩的目录，启动快）
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SlideImageViewer
+  artifactName: SlideImageViewer-${version}-setup.${ext}

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<!-- 交叉验证用的页面：把 imagesize.js 读出的尺寸和 Chromium 解码出的尺寸对比 -->
+<script>
+const fs = require('fs');
+const { pathToFileURL } = require('url');
+const { ipcRenderer } = require('electron');
+const { readSize } = require('../imagesize');
+
+// 用 canvas 让 Chromium 自己编码出真实的 WebP 文件（覆盖有损 VP8 分支）
+function makeWebp(w, h, q) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#3a7bd5'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#ff00ff';
+  g.beginPath(); g.arc(w / 2, h / 2, Math.min(w, h) / 3, 0, 7); g.fill();
+  const url = c.toDataURL('image/webp', q);
+  return Buffer.from(url.split(',')[1], 'base64');
+}
+
+const decode = (p) => new Promise((res) => {
+  const img = new Image();
+  img.onload = () => res([img.naturalWidth, img.naturalHeight]);
+  img.onerror = () => res(null);
+  img.src = pathToFileURL(p).href;
+});
+
+(async () => {
+  const { real, synth, tmp } = await ipcRenderer.invoke('get-lists');
+  const out = [];
+  for (const p of real) out.push({ p, got: readSize(p), nat: await decode(p) });
+
+  for (const [w, h, q] of [[300, 200, 0.8], [64, 64, 1], [1024, 512, 0.5]]) {
+    const p = tmp + '\\gen_' + w + 'x' + h + '_' + q + '.webp';
+    fs.writeFileSync(p, makeWebp(w, h, q));
+    out.push({ p, got: readSize(p), nat: await decode(p) });
+  }
+
+  const syn = synth.map((s) => ({ p: s.p, got: readSize(s.p), want: [s.w, s.h] }));
+  console.log('[VERIFY]' + JSON.stringify({ out, syn }));
+  ipcRenderer.send('done');
+})();
+</script>

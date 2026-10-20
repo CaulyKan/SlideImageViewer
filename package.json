@@ -1,0 +1,27 @@
+{
+  "name": "slideimageviewer",
+  "productName": "SlideImageViewer",
+  "version": "1.0.0",
+  "description": "极简看图软件：连续平铺、滚轮自动播放、动图支持",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "gen-images": "node test/gen-images.js",
+    "gen-anim": "electron test/gen-anim.js",
+    "smoke": "node test/gen-images.js && electron . --smoke test/images/a_02_blue.png",
+    "verify-sizes": "electron test/verify-sizes.js",
+    "check-title": "electron test/check-title.js",
+    "check-cursor": "electron test/gen-anim.js && electron test/check-cursor.js",
+    "bench": "electron test/gen-anim.js && electron test/bench.js",
+    "bench-open": "electron test/bench-open.js",
+    "shot": "electron test/shot.js",
+    "make-icon": "node scripts/make-icon.js",
+    "build": "node scripts/make-icon.js && electron-builder --win"
+  },
+  "author": "cauly",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^26.15.3"
+  }
+}
