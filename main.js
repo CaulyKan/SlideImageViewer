@@ -1,5 +1,6 @@
 // 主进程：负责创建窗口、系统对话框、以及把启动参数传给界面
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron');
+const fs = require('fs');
 const path = require('path');
 
 let win = null;
@@ -14,9 +15,47 @@ function argPath() {
   return null;
 }
 
+// ---------- 窗口状态记忆 ----------
+// 默认最大化；之后记住上次关闭时的位置和大小，下次按原样恢复
+function stateFile() {
+  return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function loadWindowState() {
+  try {
+    const s = JSON.parse(fs.readFileSync(stateFile(), 'utf8'));
+    const b = s && s.bounds;
+    if (!b || ![b.x, b.y, b.width, b.height].every(Number.isFinite) || b.width < 200 || b.height < 200) return null;
+    // 窗口至少要有一部分落在现在的某块屏幕里，防止拔掉显示器后窗口开到屏幕外找不到
+    const visible = screen.getAllDisplays().some((d) => {
+      const a = d.workArea;
+      return b.x + b.width > a.x + 60 && b.x < a.x + a.width - 60 &&
+             b.y + b.height > a.y + 60 && b.y < a.y + a.height - 60;
+    });
+    if (!visible) return null;
+    return s;
+  } catch {
+    return null; // 没有记录或读不出来，就用默认值
+  }
+}
+
+function saveWindowState() {
+  if (!win || win.isDestroyed()) return;
+  try {
+    // getNormalBounds 拿到的是"非最大化"时的尺寸，恢复时再按需最大化，不会把最大化尺寸当成普通尺寸
+    fs.writeFileSync(stateFile(), JSON.stringify({
+      bounds: win.getNormalBounds(),
+      maximized: win.isMaximized(),
+    }));
+  } catch {
+    // 存不上就算了，下次用默认值
+  }
+}
+
 function createWindow() {
   const smoke = process.argv.includes('--smoke');
-  win = new BrowserWindow({
+  const saved = loadWindowState();
+  const opts = {
     width: 1280,
     height: 820,
     minWidth: 640,
@@ -29,7 +68,18 @@ function createWindow() {
       contextIsolation: false,
       spellcheck: false,
     },
-  });
+  };
+  if (saved) {
+    opts.x = saved.bounds.x;
+    opts.y = saved.bounds.y;
+    opts.width = saved.bounds.width;
+    opts.height = saved.bounds.height;
+  }
+
+  win = new BrowserWindow(opts);
+  // 第一次运行默认最大化；之后恢复上次的窗口状态
+  if (saved ? !!saved.maximized : true) win.maximize();
+  win.on('close', saveWindowState);
 
   win.loadFile('index.html', smoke ? { query: { smoke: '1' } } : undefined);
 

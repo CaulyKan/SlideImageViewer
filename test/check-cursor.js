@@ -26,11 +26,17 @@ app.whenReady().then(async () => {
     el.dispatchEvent(new MouseEvent('mousedown', { clientX: ${x}, clientY: ${y}, bubbles: true }));
     return true;
   })()`);
-  const state = () => js(`({
-    hidden: strip.classList.contains('hide-cursor'),
-    playing, mouseInImage,
-    barShown: statusbar.classList.contains('show'),
-  })`);
+  const state = () => js(`(() => {
+    const el = document.elementFromPoint(640, 400);
+    return {
+      hidden: document.body.classList.contains('hide-cursor'),
+      // 不只看类名，还要看指针样式是否真的作用到了指针所在的元素上
+      cursorAt: el ? getComputedStyle(el).cursor : '(无元素)',
+      at: el ? el.tagName : '-',
+      playing, mouseInImage,
+      barShown: statusbar.classList.contains('show'),
+    };
+  })()`);
   // 真实的滚轮事件是打在鼠标下的元素上的，并且带坐标，这里照样模拟
   const play = () => js(`(() => {
     const el = document.elementFromPoint(640, 400) || document.body;
@@ -54,7 +60,7 @@ app.whenReady().then(async () => {
     console.log(`  ${ok ? 'OK  ' : '错! '} ${name}${extra ? '  [' + extra + ']' : ''}`);
   };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const brief = (s) => `隐藏=${s.hidden} 播放中=${s.playing} 在图片区=${s.mouseInImage} 状态栏=${s.barShown}`;
+  const brief = (s) => `隐藏=${s.hidden} 样式=${s.cursorAt}@${s.at} 播放中=${s.playing} 在图片区=${s.mouseInImage} 状态栏=${s.barShown}`;
 
   // ---- 1) 回归：只用滚轮起播，鼠标从头到尾没移动过 ----
   //       这正是真实使用中最常见的情形（打开图片后直接滚轮起播）。
@@ -63,45 +69,45 @@ app.whenReady().then(async () => {
   await play();
   await wait(WAIT);
   let s = await state();
-  check('只滚轮起播、鼠标未移动也能隐藏', s.hidden && s.playing, brief(s));
+  check('只滚轮起播、鼠标未移动也能隐藏', s.hidden && s.cursorAt === 'none', brief(s));
 
   // ---- 2) 移动 → 立刻出现 ----
   await move(660, 420);
   s = await state();
-  check('移动后指针出现', !s.hidden, brief(s));
+  check('移动后指针出现', !s.hidden && s.cursorAt !== 'none', brief(s));
 
   // ---- 3) 不动 5 秒 → 自动隐藏 ----
   await ensurePlaying();
   await wait(WAIT);
   s = await state();
-  check(`不动 ${WAIT / 1000} 秒后自动隐藏`, s.hidden, brief(s));
+  check(`不动 ${WAIT / 1000} 秒后自动隐藏`, s.hidden && s.cursorAt === 'none', brief(s));
 
   // ---- 4) 再不动 5 秒 → 隐藏；移到窗口最底部（图片区域外）→ 出现 ----
   await ensurePlaying();
   await wait(WAIT);
   s = await state();
-  check('再次不动后隐藏', s.hidden, brief(s));
+  check('再次不动后隐藏', s.hidden && s.cursorAt === 'none', brief(s));
   await move(640, 795); // 最底部：属于图片区域外
   await move(640, 795); // 状态栏浮出后再动一次，命中测试才落在状态栏上
   s = await state();
-  check('移到图片区域外（底部状态栏）指针出现', !s.hidden && s.barShown, brief(s));
+  check('移到图片区域外（底部状态栏）指针出现', !s.hidden && s.cursorAt !== 'none' && s.barShown, brief(s));
 
   // ---- 5) 回图片区域不动 5 秒 → 隐藏；点击 → 出现 ----
   await move(640, 400);
   await ensurePlaying();
   await wait(WAIT);
   s = await state();
-  check('回到图片区域不动后隐藏', s.hidden, brief(s));
+  check('回到图片区域不动后隐藏', s.hidden && s.cursorAt === 'none', brief(s));
   await click(640, 400);
   s = await state();
-  check('点击后指针出现', !s.hidden, brief(s));
+  check('点击后指针出现', !s.hidden && s.cursorAt !== 'none', brief(s));
 
   // ---- 6) 暂停播放后不应该再隐藏 ----
   await js('if (playing) togglePlay(); true');
   await move(640, 400);
   await wait(WAIT);
   s = await state();
-  check('暂停播放后指针保持可见', !s.hidden && !s.playing, brief(s));
+  check('暂停播放后指针保持可见', !s.hidden && s.cursorAt !== 'none' && !s.playing, brief(s));
 
   const pass = results.every(Boolean);
   console.log('');

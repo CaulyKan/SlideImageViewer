@@ -18,9 +18,15 @@ html, body {
 }
 #strip.dragging { cursor: grabbing; }
 
-/* 自动播放时鼠标停在图片上不动，就把指针藏起来，免得挡着看图。
-   写在 .dragging 之后，同样的优先级下这条会生效 */
-#strip.hide-cursor { cursor: none; }
+/* 自动播放且鼠标长时间不动时，把指针藏起来，免得挡着看图。
+   规则作用在整份文档上（不管指针停在哪个元素上都生效，!important 压过其它指针样式）；
+   底部状态栏和右键菜单是例外，那里必须看得见指针 */
+body.hide-cursor,
+body.hide-cursor * { cursor: none !important; }
+body.hide-cursor #statusbar,
+body.hide-cursor #statusbar *,
+body.hide-cursor #ctxmenu,
+body.hide-cursor #ctxmenu * { cursor: auto !important; }
 
 /* 整条胶片放在这一个容器里整体平移：每帧只改这一个 transform，
    比给每张图逐个写样式省得多 */

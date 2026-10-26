@@ -12,6 +12,7 @@
     "verify-sizes": "electron test/verify-sizes.js",
     "check-title": "electron test/check-title.js",
     "check-cursor": "electron test/gen-anim.js && electron test/check-cursor.js",
+    "check-window": "electron test/check-window.js",
     "bench": "electron test/gen-anim.js && electron test/bench.js",
     "bench-open": "electron test/bench-open.js",
     "shot": "electron test/shot.js",

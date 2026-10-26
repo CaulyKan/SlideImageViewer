@@ -559,7 +559,7 @@ function showCursor() {
   cursorTimer = 0;
   if (cursorHidden) {
     cursorHidden = false;
-    strip.classList.remove('hide-cursor');
+    document.body.classList.remove('hide-cursor');
   }
 }
 
@@ -569,7 +569,7 @@ function scheduleCursorHide() {
     cursorTimer = 0;
     if (playing && mouseInImage) {
       cursorHidden = true;
-      strip.classList.add('hide-cursor');
+      document.body.classList.add('hide-cursor');
     }
   }, CURSOR_IDLE_MS);
 }
@@ -843,12 +843,17 @@ function runSmoke() {
       showCursor(); syncCursor();
       check('cursor-hide-armed', cursorTimer !== 0);
       playing = false; syncCursor();
-      check('cursor-visible-when-paused', cursorTimer === 0 && !strip.classList.contains('hide-cursor'));
+      check('cursor-visible-when-paused', cursorTimer === 0 && !document.body.classList.contains('hide-cursor'));
       playing = true; mouseInImage = false; syncCursor();
-      check('cursor-visible-outside-image', cursorTimer === 0 && !strip.classList.contains('hide-cursor'));
-      cursorHidden = true; strip.classList.add('hide-cursor');
+      check('cursor-visible-outside-image', cursorTimer === 0 && !document.body.classList.contains('hide-cursor'));
+      cursorHidden = true; document.body.classList.add('hide-cursor');
       showCursor();
-      check('cursor-shown-clears-class', !strip.classList.contains('hide-cursor') && !cursorHidden);
+      check('cursor-shown-clears-class', !document.body.classList.contains('hide-cursor') && !cursorHidden);
+      // 关键：指针样式必须真的作用到元素上（曾经只查类名，漏掉了样式没生效的情况）
+      document.body.classList.add('hide-cursor');
+      const probe = document.elementFromPoint(Math.round(vw / 2), Math.round(H / 2)) || strip;
+      check('cursor-style-none', getComputedStyle(probe).cursor === 'none');
+      document.body.classList.remove('hide-cursor');
       // 任何指针事件都要能更新"是否在图片区域"（滚轮起播时靠它判断）
       notePointer({ clientY: 400, target: strip });
       check('pointer-note-in-image', mouseInImage === true);
