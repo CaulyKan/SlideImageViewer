@@ -31,7 +31,16 @@ app.whenReady().then(async () => {
     playing, mouseInImage,
     barShown: statusbar.classList.contains('show'),
   })`);
-  const play = () => js(`for (let i = 0; i < 3; i++) window.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, deltaMode: 0, cancelable: true })); true`);
+  // 真实的滚轮事件是打在鼠标下的元素上的，并且带坐标，这里照样模拟
+  const play = () => js(`(() => {
+    const el = document.elementFromPoint(640, 400) || document.body;
+    for (let i = 0; i < 3; i++) {
+      el.dispatchEvent(new WheelEvent('wheel', {
+        deltaY: 120, deltaMode: 0, cancelable: true, bubbles: true, clientX: 640, clientY: 400,
+      }));
+    }
+    return true;
+  })()`);
   // 回到胶片开头再确认在播放：保证接下来这几秒不会播到末尾停下
   const ensurePlaying = async () => {
     await js('goToBlock(0, false); true');
@@ -47,23 +56,25 @@ app.whenReady().then(async () => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const brief = (s) => `隐藏=${s.hidden} 播放中=${s.playing} 在图片区=${s.mouseInImage} 状态栏=${s.barShown}`;
 
-  // ---- 1) 起播 + 鼠标在图片区域中央 ----
+  // ---- 1) 回归：只用滚轮起播，鼠标从头到尾没移动过 ----
+  //       这正是真实使用中最常见的情形（打开图片后直接滚轮起播）。
+  //       曾经 mouseInImage 初值为 false 且只在 mousemove 里更新，
+  //       导致这种情况下指针永远不会隐藏。
   await play();
-  await move(640, 400);
-  await wait(300);
+  await wait(WAIT);
   let s = await state();
-  check('起播后指针可见', !s.hidden && s.playing, brief(s));
+  check('只滚轮起播、鼠标未移动也能隐藏', s.hidden && s.playing, brief(s));
 
-  // ---- 2) 不动 5 秒 → 自动隐藏 ----
+  // ---- 2) 移动 → 立刻出现 ----
+  await move(660, 420);
+  s = await state();
+  check('移动后指针出现', !s.hidden, brief(s));
+
+  // ---- 3) 不动 5 秒 → 自动隐藏 ----
   await ensurePlaying();
   await wait(WAIT);
   s = await state();
   check(`不动 ${WAIT / 1000} 秒后自动隐藏`, s.hidden, brief(s));
-
-  // ---- 3) 移动 → 立刻出现 ----
-  await move(660, 420);
-  s = await state();
-  check('移动后指针出现', !s.hidden, brief(s));
 
   // ---- 4) 再不动 5 秒 → 隐藏；移到窗口最底部（图片区域外）→ 出现 ----
   await ensurePlaying();

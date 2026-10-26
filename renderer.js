@@ -492,9 +492,13 @@ function openPath(p) {
 window.addEventListener('wheel', (e) => {
   e.preventDefault();
   if (!n) return;
+  notePointer(e);   // 滚轮事件也带坐标：用滚轮起播时，鼠标通常一直没动过
   const unit = e.deltaMode === 1 ? e.deltaY / 3 : e.deltaY / 100; // 归一化，鼠标/触控板都顺手
   const dirMag = Math.sign(unit) * Math.max(1, Math.abs(unit));
   setSpeedDelta(SPEED_STEP * dirMag);
+  // 滚轮也算"正在操作"：重置 5 秒计时，免得一边调速度一边看着指针消失
+  // （指针已经藏起来时不重新显示，按约定只有移动或点击才让它出现）
+  if (playing && mouseInImage && !cursorHidden) scheduleCursorHide();
 }, { passive: false });
 
 // ---------- 事件：键盘 ----------
@@ -533,9 +537,22 @@ strip.addEventListener('pointerdown', (e) => {
 // 自动播放时，鼠标停在图片区域不动满 5 秒就把指针藏起来，免得挡着看图；
 // 一动、一点击，或者移到图片区域外（底部状态栏、右键菜单）就立刻显示出来。
 const CURSOR_IDLE_MS = 5000;
+const STATUS_ZONE = 52;   // 窗口底部这条区域算"图片区域外"，鼠标进到这里会浮出状态栏
+
 let cursorTimer = 0;
 let cursorHidden = false;
-let mouseInImage = false;
+// 还没收到过任何鼠标事件时，先按"在图片区域"算 —— 图片区域占了窗口绝大部分，
+// 这样用滚轮起播（鼠标往往一直没动过）也能正常开始计时
+let mouseInImage = true;
+
+// 任何指针事件都带着坐标，都可以用来判断鼠标在不在图片区域。
+// 这一点很关键：只看 mousemove 的话，"滚轮起播但鼠标没动过"就永远判不出来。
+function notePointer(e) {
+  if (!e || typeof e.clientY !== 'number') return;
+  const t = e.target;
+  const overMenu = !!t && t.nodeType === 1 && ctxmenu.contains(t);
+  mouseInImage = e.clientY < innerHeight - STATUS_ZONE && !overMenu;
+}
 
 function showCursor() {
   clearTimeout(cursorTimer);
@@ -564,23 +581,20 @@ function syncCursor() {
 }
 
 // ---------- 事件：状态栏显隐 ----------
-// 窗口底部这条区域算"图片区域外"：鼠标进到这里会浮出状态栏，指针也保持可见
-const STATUS_ZONE = 52;
-
 window.addEventListener('mousemove', (e) => {
-  const nearBottom = e.clientY >= innerHeight - STATUS_ZONE;
-  statusbar.classList.toggle('show', nearBottom);
-  const inImage = !nearBottom && !ctxmenu.contains(e.target);
-  mouseInImage = inImage;
+  statusbar.classList.toggle('show', e.clientY >= innerHeight - STATUS_ZONE);
+  notePointer(e);
   showCursor();                                   // 一动就先让指针出现
-  if (playing && inImage) scheduleCursorHide();   // 然后重新开始 5 秒计时
+  if (playing && mouseInImage) scheduleCursorHide();   // 然后重新开始 5 秒计时
 });
+// 窗口出现在鼠标底下时，用第一个鼠标事件把位置补上
+window.addEventListener('mouseover', notePointer);
 window.addEventListener('mouseleave', () => {
   statusbar.classList.remove('show');
   mouseInImage = false;
   showCursor();
 });
-window.addEventListener('mousedown', showCursor);
+window.addEventListener('mousedown', (e) => { notePointer(e); showCursor(); });
 
 // ---------- 事件：进度条点击/拖动 ----------
 function fracFromEvent(e) {
@@ -835,6 +849,12 @@ function runSmoke() {
       cursorHidden = true; strip.classList.add('hide-cursor');
       showCursor();
       check('cursor-shown-clears-class', !strip.classList.contains('hide-cursor') && !cursorHidden);
+      // 任何指针事件都要能更新"是否在图片区域"（滚轮起播时靠它判断）
+      notePointer({ clientY: 400, target: strip });
+      check('pointer-note-in-image', mouseInImage === true);
+      notePointer({ clientY: innerHeight - 10, target: strip });
+      check('pointer-note-outside-image', mouseInImage === false);
+      notePointer({ clientY: 400, target: strip });
       playing = false; mouseInImage = false;
 
       // 回归：打开几千张的文件夹时，不能把主线程堵住
